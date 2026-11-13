@@ -417,8 +417,8 @@
         </div>
     </div>
 
-    <!-- 설정 모달 (최초 실행시 활성화) -->
-    <div class="modal-backdrop active" id="settingsModal">
+    <!-- 설정 모달 -->
+    <div class="modal-backdrop" id="settingsModal">
         <div class="bottom-sheet">
             <div class="sheet-handle"></div>
             <div class="sheet-header">
@@ -516,6 +516,38 @@
             let folderDataMap = {};
             let activeFolderKey = '';
             let isTextView = false;
+
+            // 로컬 스토리지에서 설정 불러오기
+            function loadSettings() {
+                try {
+                    if (localStorage.getItem('viewer_domain') !== null) domainInput.value = localStorage.getItem('viewer_domain');
+                    if (localStorage.getItem('viewer_path1s') !== null) path1sInput.value = localStorage.getItem('viewer_path1s');
+                    if (localStorage.getItem('viewer_path2s') !== null) path2sInput.value = localStorage.getItem('viewer_path2s');
+                    if (localStorage.getItem('viewer_startNum') !== null) startNumInput.value = localStorage.getItem('viewer_startNum');
+                    if (localStorage.getItem('viewer_endNum') !== null) endNumInput.value = localStorage.getItem('viewer_endNum');
+                    if (localStorage.getItem('viewer_ext') !== null) extInput.value = localStorage.getItem('viewer_ext');
+                    if (localStorage.getItem('viewer_padding') !== null) paddingSelect.value = localStorage.getItem('viewer_padding');
+                    if (localStorage.getItem('viewer_proxy') !== null) proxySelect.value = localStorage.getItem('viewer_proxy');
+                } catch (e) {
+                    console.error("Load settings error:", e);
+                }
+            }
+
+            // 로컬 스토리지에 설정 저장하기
+            function saveSettings() {
+                try {
+                    localStorage.setItem('viewer_domain', domainInput.value);
+                    localStorage.setItem('viewer_path1s', path1sInput.value);
+                    localStorage.setItem('viewer_path2s', path2sInput.value);
+                    localStorage.setItem('viewer_startNum', startNumInput.value);
+                    localStorage.setItem('viewer_endNum', endNumInput.value);
+                    localStorage.setItem('viewer_ext', extInput.value);
+                    localStorage.setItem('viewer_padding', paddingSelect.value);
+                    localStorage.setItem('viewer_proxy', proxySelect.value);
+                } catch (e) {
+                    console.error("Save settings error:", e);
+                }
+            }
 
             function formatNumber(num, pad) {
                 let s = num.toString();
@@ -707,6 +739,7 @@
 
             if (applySettingsBtn && settingsModal) {
                 applySettingsBtn.onclick = () => {
+                    saveSettings(); // 설정 저장 기능 추가
                     settingsModal.classList.remove('active');
                     buildData();
                     renderChips();
@@ -742,7 +775,10 @@
                 lightbox.onclick = (e) => { if (e.target === lightbox) lightbox.classList.remove('active'); };
             }
 
-            // 최초 실행 시 기본값으로 바로 로드
+            // 1. 저장된 설정 불러오기
+            loadSettings();
+
+            // 2. 초기 실행
             buildData();
             renderChips();
             renderContent();
