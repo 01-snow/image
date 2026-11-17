@@ -428,23 +428,23 @@
 
             <div class="form-group">
                 <label>기본 도메인 URL 또는 풀링크 입력</label>
-                <input type="text" id="domain" value="https://fujiwara.mar29.uk/A_2.webp">
+                <input type="text" id="domain" value="https://d.aang12.org/touya/B/29.png">
             </div>
 
             <div class="form-group">
-                <label>1단계 접두사 / 폴더 (쉼표나 줄바꿈으로 여러 개 가능)</label>
-                <textarea id="path1s" class="setting-textarea" placeholder="예: A, B, C"></textarea>
+                <label>1단계 폴더 (상위폴더, 여러 개 입력 가능)</label>
+                <textarea id="path1s" class="setting-textarea" placeholder="예: ak, touya"></textarea>
             </div>
 
-            <div class="form-group" style="display:none;">
-                <label>2단계 폴더</label>
-                <textarea id="path2s" class="setting-textarea"></textarea>
+            <div class="form-group">
+                <label>2단계 폴더 (하위폴더, 비워두면 하위폴더 생략)</label>
+                <textarea id="path2s" class="setting-textarea" placeholder="예: A, B, C (안 쓰려면 비워두세요)"></textarea>
             </div>
 
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
                 <div class="form-group">
                     <label>시작 번호</label>
-                    <input type="number" id="startNum" value="1">
+                    <input type="number" id="startNum" value="0">
                 </div>
                 <div class="form-group">
                     <label>최대 탐색 번호</label>
@@ -547,8 +547,10 @@
                     let allItems = [];
 
                     let baseUrl = '';
-                    let defaultPrefix = 'A';
-                    let ext = '.webp';
+                    let defaultP1 = '';
+                    let defaultP2 = '';
+                    let isUnderscorePattern = false;
+                    let ext = '.png';
 
                     try {
                         let targetUrl = rawDomain;
@@ -556,51 +558,95 @@
                             targetUrl = 'https://' + targetUrl;
                         }
                         const parsed = new URL(targetUrl);
-                        let pathname = parsed.pathname; // 예: /A_2.webp 또는 /folder/A_2.webp
+                        let pathname = parsed.pathname; // 예: /touya/B/29.png 또는 /A_2.webp
                         let lastSlash = pathname.lastIndexOf('/');
                         
                         if (lastSlash !== -1) {
-                            let fileName = pathname.substring(lastSlash + 1); // A_2.webp
+                            let fileName = pathname.substring(lastSlash + 1); // 29.png 또는 A_2.webp
                             let dot = fileName.lastIndexOf('.');
                             if (dot !== -1) ext = fileName.substring(dot);
                             
-                            let namePart = dot !== -1 ? fileName.substring(0, dot) : fileName; // A_2
-                            let underscoreIdx = namePart.lastIndexOf('_');
-                            if (underscoreIdx !== -1) {
-                                defaultPrefix = namePart.substring(0, underscoreIdx); // A
+                            let namePart = dot !== -1 ? fileName.substring(0, dot) : fileName;
+                            
+                            // 언더바 패턴(예: A_2)인지 슬래시 폴더 패턴인지 확인
+                            if (namePart.includes('_') && !pathname.substring(0, lastSlash).includes('/')) {
+                                isUnderscorePattern = true;
+                                defaultP1 = namePart.substring(0, namePart.lastIndexOf('_'));
+                                baseUrl = parsed.origin + (lastSlash > 0 ? pathname.substring(0, lastSlash) : '');
                             } else {
-                                defaultPrefix = namePart;
+                                let dirPath = pathname.substring(0, lastSlash); // /touya/B 또는 /A
+                                let segments = dirPath.split('/').filter(Boolean);
+                                if (segments.length >= 2) {
+                                    defaultP2 = segments.pop();
+                                    defaultP1 = segments.pop();
+                                } else if (segments.length === 1) {
+                                    defaultP1 = segments.pop();
+                                }
+                                let remainingPath = segments.length > 0 ? '/' + segments.join('/') : '';
+                                baseUrl = `${parsed.origin}${remainingPath}`;
                             }
-
-                            let dirPath = pathname.substring(0, lastSlash); // /folder 또는 빈값
-                            baseUrl = `${parsed.origin}${dirPath}`;
                         } else {
                             baseUrl = parsed.origin;
                         }
                     } catch (e) {
-                        baseUrl = 'https://fujiwara.mar29.uk';
-                        defaultPrefix = 'A';
+                        baseUrl = 'https://d.aang12.org';
+                        defaultP1 = 'touya';
+                        defaultP2 = 'B';
                     }
 
-                    // 1단계 폴더 입력란에 값이 있으면 그것을 접두사 목록으로 사용, 없으면 링크에서 추출한 기본값 사용
-                    let prefixList = parseList(path1sInput ? path1sInput.value : '');
-                    if (prefixList.length === 0) prefixList = [defaultPrefix];
+                    let p1List = parseList(path1sInput ? path1sInput.value : '');
+                    if (p1List.length === 0) p1List = [defaultP1 || 'A'];
 
-                    const start = startNumInput && startNumInput.value !== '' ? parseInt(startNumInput.value, 10) : 1;
+                    let p2List = parseList(path2sInput ? path2sInput.value : '');
+                    
+                    const start = startNumInput && startNumInput.value !== '' ? parseInt(startNumInput.value, 10) : 0;
                     const end = endNumInput && endNumInput.value !== '' ? parseInt(endNumInput.value, 10) : 30;
 
-                    prefixList.forEach(prefix => {
-                        let folderLabel = prefix;
-                        let items = [];
-                        for (let i = start; i <= end; i++) {
-                            let formattedNum = formatNumber(i, pad);
-                            items.push({
-                                num: i,
-                                url: `${baseUrl}/${prefix}_${formattedNum}${ext}`
+                    p1List.forEach(p1 => {
+                        if (isUnderscorePattern) {
+                            // 언더바 패턴 (예: A_1.webp)
+                            let folderLabel = p1;
+                            let items = [];
+                            for (let i = start; i <= end; i++) {
+                                let formattedNum = formatNumber(i, pad);
+                                items.push({
+                                    num: i,
+                                    url: `${baseUrl}/${p1}_${formattedNum}${ext}`
+                                });
+                            }
+                            folderDataMap[folderLabel] = items;
+                            allItems = allItems.concat(items);
+                        } else if (p2List.length > 0) {
+                            // 상위 + 하위 폴더 모두 사용하는 경우
+                            p2List.forEach(p2 => {
+                                let folderLabel = `${p1} / ${p2}`;
+                                let folderPath = `${baseUrl}/${p1}/${p2}`;
+                                let items = [];
+                                for (let i = start; i <= end; i++) {
+                                    let formattedNum = formatNumber(i, pad);
+                                    items.push({
+                                        num: i,
+                                        url: `${folderPath}/${formattedNum}${ext}`
+                                    });
+                                }
+                                folderDataMap[folderLabel] = items;
+                                allItems = allItems.concat(items);
                             });
+                        } else {
+                            // 하위 폴더를 쓰지 않고 상위 폴더만 사용하는 경우
+                            let folderLabel = p1;
+                            let folderPath = `${baseUrl}/${p1}`;
+                            let items = [];
+                            for (let i = start; i <= end; i++) {
+                                let formattedNum = formatNumber(i, pad);
+                                items.push({
+                                    num: i,
+                                    url: `${folderPath}/${formattedNum}${ext}`
+                                });
+                            }
+                            folderDataMap[folderLabel] = items;
+                            allItems = allItems.concat(items);
                         }
-                        folderDataMap[folderLabel] = items;
-                        allItems = allItems.concat(items);
                     });
 
                     if (Object.keys(folderDataMap).length > 1) {
