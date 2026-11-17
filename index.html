@@ -432,12 +432,12 @@
             </div>
 
             <div class="form-group">
-                <label>1단계 폴더 / 접두사 (여러 개 입력 가능)</label>
-                <textarea id="path1s" class="setting-textarea" placeholder="예: ak, touya 또는 A, B"></textarea>
+                <label>1단계 폴더 (상위폴더, 여러 개 입력 가능)</label>
+                <textarea id="path1s" class="setting-textarea" placeholder="비워두면 링크의 폴더를 그대로 사용합니다"></textarea>
             </div>
 
             <div class="form-group">
-                <label>2단계 폴더 (하위폴더, 선택사항)</label>
+                <label>2단계 폴더 (하위폴더, 안 쓰려면 비워두세요)</label>
                 <textarea id="path2s" class="setting-textarea" placeholder="안 쓰려면 비워두세요"></textarea>
             </div>
 
@@ -499,7 +499,7 @@
             let folderDataMap = {};
             let activeFolderKey = '';
             let isTextView = false;
-            let currentPad = 1; // 기본 1자리부터 탐색 시작
+            let currentPad = 1;
             let renderSessionId = 0;
 
             function loadSettings() {
@@ -568,21 +568,27 @@
                             
                             let namePart = dot !== -1 ? fileName.substring(0, dot) : fileName;
                             
+                            // 언더바 패턴(예: A_2)인지 확인
                             if (namePart.includes('_') && !pathname.substring(0, lastSlash).includes('/')) {
                                 isUnderscorePattern = true;
                                 defaultP1 = namePart.substring(0, namePart.lastIndexOf('_'));
                                 baseUrl = parsed.origin + (lastSlash > 0 ? pathname.substring(0, lastSlash) : '');
                             } else {
-                                let dirPath = pathname.substring(0, lastSlash); 
+                                // 표준 폴더 경로 패턴 (예: /touya/B/29.png)
+                                let dirPath = pathname.substring(0, lastSlash); // /touya/B 또는 /A
                                 let segments = dirPath.split('/').filter(Boolean);
+                                
                                 if (segments.length >= 2) {
                                     defaultP2 = segments.pop();
                                     defaultP1 = segments.pop();
+                                    let remainingPath = segments.length > 0 ? '/' + segments.join('/') : '';
+                                    baseUrl = `${parsed.origin}${remainingPath}`;
                                 } else if (segments.length === 1) {
                                     defaultP1 = segments.pop();
+                                    baseUrl = parsed.origin;
+                                } else {
+                                    baseUrl = parsed.origin;
                                 }
-                                let remainingPath = segments.length > 0 ? '/' + segments.join('/') : '';
-                                baseUrl = `${parsed.origin}${remainingPath}`;
                             }
                         } else {
                             baseUrl = parsed.origin;
@@ -630,8 +636,16 @@
                                 allItems = allItems.concat(items);
                             });
                         } else {
+                            // 2단계 폴더(하위폴더)를 안 쓸 때 처리
                             let folderLabel = p1;
-                            let folderPath = `${baseUrl}/${p1}`;
+                            let folderPath = defaultP2 ? `${baseUrl}/${p1}/${defaultP2}` : `${baseUrl}/${p1}`;
+                            
+                            // 만약 사용자가 1단계 폴더 칸에 아무것도 안 넣고 기본 풀링크를 쓸 때 defaultP2가 있으면 그것도 살려줌
+                            if (!path1sInput.value.trim() && defaultP2) {
+                                folderLabel = `${defaultP1} / ${defaultP2}`;
+                                folderPath = `${baseUrl}/${defaultP1}/${defaultP2}`;
+                            }
+
                             let items = [];
                             for (let i = start; i <= end; i++) {
                                 let formattedNum = formatNumber(i, pad);
@@ -715,7 +729,6 @@
                 let totalLoaded = 0;
                 let fallbackTriggered = false;
 
-                // 1번(0~9) 이미지가 모두 실패하면 자동으로 2자리(01, 02...) 패딩으로 전환하는 함수
                 function triggerTwoDigitFallback() {
                     if (fallbackTriggered || sessionId !== renderSessionId || currentPad !== 1) return;
                     fallbackTriggered = true;
@@ -741,7 +754,7 @@
                     const img = document.createElement('img');
                     img.alt = `img ${index + 1}`;
                     if (itemObj.num >= 0 && itemObj.num <= 9) {
-                        img.loading = 'eager'; // 한 자릿수 번호는 빠르게 판별하기 위해 우선 로드
+                        img.loading = 'eager';
                     } else {
                         img.loading = 'lazy';
                     }
@@ -766,7 +779,6 @@
                         if (currentPad === 1) {
                             if (itemObj.num >= 0 && itemObj.num <= 9) {
                                 singleDigitFailed++;
-                                // 한 자릿수(0~9)가 전부 실패하고 로드된 게 없으면 즉시 두 자리(01~)로 자동 전환!
                                 if (singleDigitFailed === singleDigitTotal && singleDigitLoaded === 0) {
                                     triggerTwoDigitFallback();
                                     return;
@@ -829,7 +841,7 @@
                 applySettingsBtn.onclick = () => {
                     saveSettings();
                     settingsModal.classList.remove('active');
-                    buildData(1); // 적용 시 항상 1자리(기본)부터 탐색 시작
+                    buildData(1);
                     renderChips();
                     renderContent();
                 };
