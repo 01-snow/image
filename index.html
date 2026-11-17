@@ -428,23 +428,23 @@
 
             <div class="form-group">
                 <label>기본 도메인 URL 또는 풀링크 입력</label>
-                <input type="text" id="domain" value="https://d.aang12.org/touya/B/29.png">
+                <input type="text" id="domain" value="https://fujiwara.mar29.uk/A_2.webp">
             </div>
 
             <div class="form-group">
-                <label>1단계 폴더 (상위폴더, 쉼표나 줄바꿈으로 여러 개 가능)</label>
-                <textarea id="path1s" class="setting-textarea" placeholder="예: ak, touya"></textarea>
+                <label>1단계 접두사 / 폴더 (쉼표나 줄바꿈으로 여러 개 가능)</label>
+                <textarea id="path1s" class="setting-textarea" placeholder="예: A, B, C"></textarea>
             </div>
 
-            <div class="form-group">
-                <label>2단계 폴더 (하위폴더, 쉼표나 줄바꿈으로 여러 개 가능)</label>
-                <textarea id="path2s" class="setting-textarea" placeholder="예: A, B, C"></textarea>
+            <div class="form-group" style="display:none;">
+                <label>2단계 폴더</label>
+                <textarea id="path2s" class="setting-textarea"></textarea>
             </div>
 
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
                 <div class="form-group">
                     <label>시작 번호</label>
-                    <input type="number" id="startNum" value="0">
+                    <input type="number" id="startNum" value="1">
                 </div>
                 <div class="form-group">
                     <label>최대 탐색 번호</label>
@@ -547,9 +547,8 @@
                     let allItems = [];
 
                     let baseUrl = '';
-                    let defaultP1 = '';
-                    let defaultP2 = '';
-                    let ext = '.png';
+                    let defaultPrefix = 'A';
+                    let ext = '.webp';
 
                     try {
                         let targetUrl = rawDomain;
@@ -557,71 +556,51 @@
                             targetUrl = 'https://' + targetUrl;
                         }
                         const parsed = new URL(targetUrl);
-                        let pathname = parsed.pathname; // 예: /touya/B/29.png
+                        let pathname = parsed.pathname; // 예: /A_2.webp 또는 /folder/A_2.webp
                         let lastSlash = pathname.lastIndexOf('/');
+                        
                         if (lastSlash !== -1) {
-                            let fileName = pathname.substring(lastSlash + 1);
+                            let fileName = pathname.substring(lastSlash + 1); // A_2.webp
                             let dot = fileName.lastIndexOf('.');
                             if (dot !== -1) ext = fileName.substring(dot);
                             
-                            let dirPath = pathname.substring(0, lastSlash); // /touya/B
-                            let segments = dirPath.split('/').filter(Boolean);
-                            if (segments.length >= 2) {
-                                defaultP2 = segments.pop();
-                                defaultP1 = segments.pop();
-                            } else if (segments.length === 1) {
-                                defaultP1 = segments.pop();
+                            let namePart = dot !== -1 ? fileName.substring(0, dot) : fileName; // A_2
+                            let underscoreIdx = namePart.lastIndexOf('_');
+                            if (underscoreIdx !== -1) {
+                                defaultPrefix = namePart.substring(0, underscoreIdx); // A
+                            } else {
+                                defaultPrefix = namePart;
                             }
-                            let remainingPath = segments.length > 0 ? '/' + segments.join('/') : '';
-                            baseUrl = `${parsed.origin}${remainingPath}`;
+
+                            let dirPath = pathname.substring(0, lastSlash); // /folder 또는 빈값
+                            baseUrl = `${parsed.origin}${dirPath}`;
                         } else {
                             baseUrl = parsed.origin;
                         }
                     } catch (e) {
-                        baseUrl = 'https://d.aang12.org';
-                        defaultP1 = 'touya';
-                        defaultP2 = 'B';
+                        baseUrl = 'https://fujiwara.mar29.uk';
+                        defaultPrefix = 'A';
                     }
 
-                    let p1List = parseList(path1sInput ? path1sInput.value : '');
-                    if (p1List.length === 0) p1List = [defaultP1];
+                    // 1단계 폴더 입력란에 값이 있으면 그것을 접두사 목록으로 사용, 없으면 링크에서 추출한 기본값 사용
+                    let prefixList = parseList(path1sInput ? path1sInput.value : '');
+                    if (prefixList.length === 0) prefixList = [defaultPrefix];
 
-                    let p2List = parseList(path2sInput ? path2sInput.value : '');
-                    if (p2List.length === 0 && defaultP2) p2List = [defaultP2];
-
-                    const start = startNumInput && startNumInput.value !== '' ? parseInt(startNumInput.value, 10) : 0;
+                    const start = startNumInput && startNumInput.value !== '' ? parseInt(startNumInput.value, 10) : 1;
                     const end = endNumInput && endNumInput.value !== '' ? parseInt(endNumInput.value, 10) : 30;
 
-                    p1List.forEach(p1 => {
-                        if (p2List.length > 0) {
-                            p2List.forEach(p2 => {
-                                let folderLabel = `${p1} / ${p2}`;
-                                let folderPath = `${baseUrl}/${p1}/${p2}`;
-                                let items = [];
-                                for (let i = start; i <= end; i++) {
-                                    let formattedNum = formatNumber(i, pad);
-                                    items.push({
-                                        num: i,
-                                        url: `${folderPath}/${formattedNum}${ext}`
-                                    });
-                                }
-                                folderDataMap[folderLabel] = items;
-                                allItems = allItems.concat(items);
+                    prefixList.forEach(prefix => {
+                        let folderLabel = prefix;
+                        let items = [];
+                        for (let i = start; i <= end; i++) {
+                            let formattedNum = formatNumber(i, pad);
+                            items.push({
+                                num: i,
+                                url: `${baseUrl}/${prefix}_${formattedNum}${ext}`
                             });
-                        } else {
-                            let folderLabel = p1;
-                            let folderPath = `${baseUrl}/${p1}`;
-                            let items = [];
-                            for (let i = start; i <= end; i++) {
-                                let formattedNum = formatNumber(i, pad);
-                                items.push({
-                                    num: i,
-                                    url: `${folderPath}/${formattedNum}${ext}`
-                                });
-                            }
-                            folderDataMap[folderLabel] = items;
-                            allItems = allItems.concat(items);
                         }
+                        folderDataMap[folderLabel] = items;
+                        allItems = allItems.concat(items);
                     });
 
                     if (Object.keys(folderDataMap).length > 1) {
@@ -672,7 +651,7 @@
                 
                 if (keys.length === 0) {
                     if (headerTitle) headerTitle.textContent = "🖼️ 한 장씩 스크롤 뷰어";
-                    feedContainer.innerHTML = '<div style="color:var(--text-secondary); text-align:center; padding:60px 20px; line-height: 1.6;">우측 상단 ⚙️ 버튼을 눌러 풀링크와 폴더 정보를 입력해주세요!</div>';
+                    feedContainer.innerHTML = '<div style="color:var(--text-secondary); text-align:center; padding:60px 20px; line-height: 1.6;">우측 상단 ⚙️ 버튼을 눌러 링크와 설정을 확인해주세요!</div>';
                     if (urlTextArea) urlTextArea.value = '';
                     return;
                 }
@@ -686,21 +665,6 @@
                 }
 
                 feedContainer.innerHTML = '';
-
-                let singleDigitTotal = items.filter(it => it.num >= 0 && it.num <= 9).length;
-                let singleDigitFailed = 0;
-                let singleDigitLoaded = 0;
-                let totalCompleted = 0;
-                let totalLoaded = 0;
-                let fallbackTriggered = false;
-
-                function triggerTwoDigitFallback() {
-                    if (fallbackTriggered || sessionId !== renderSessionId || currentPad !== 1) return;
-                    fallbackTriggered = true;
-                    buildData(2);
-                    renderChips();
-                    renderContent();
-                }
 
                 let validUrlsForText = [];
 
@@ -718,40 +682,19 @@
 
                     const img = document.createElement('img');
                     img.alt = `img ${index + 1}`;
-                    if (itemObj.num >= 0 && itemObj.num <= 9) {
-                        img.loading = 'eager';
-                    } else {
-                        img.loading = 'lazy';
-                    }
+                    img.loading = 'lazy';
 
                     img.onload = () => {
                         if (sessionId !== renderSessionId) return;
                         spinner.style.display = 'none';
-                        totalCompleted++;
-                        totalLoaded++;
                         validUrlsForText.push(originalUrl);
-                        if (itemObj.num >= 0 && itemObj.num <= 9) {
-                            singleDigitLoaded++;
-                        }
                         updateTextarea(validUrlsForText);
                     };
 
                     img.onerror = () => {
                         if (sessionId !== renderSessionId) return;
                         item.remove();
-                        totalCompleted++;
-
-                        if (currentPad === 1) {
-                            if (itemObj.num >= 0 && itemObj.num <= 9) {
-                                singleDigitFailed++;
-                                if (singleDigitFailed === singleDigitTotal && singleDigitLoaded === 0) {
-                                    triggerTwoDigitFallback();
-                                    return;
-                                }
-                            }
-                        }
-
-                        if (feedContainer.children.length === 0 && totalCompleted === items.length && !fallbackTriggered) {
+                        if (feedContainer.children.length === 0 && index === items.length - 1) {
                             feedContainer.innerHTML = '<div style="color:var(--text-secondary); text-align:center; padding:60px 20px; line-height: 1.6;">불러올 수 있는 이미지가 없습니다.</div>';
                         }
                     };
