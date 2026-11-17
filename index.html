@@ -318,7 +318,7 @@
         }
 
         textarea.setting-textarea {
-            height: 60px;
+            height: 70px;
             font-family: monospace;
             resize: none;
         }
@@ -427,13 +427,13 @@
             </div>
 
             <div class="form-group">
-                <label>기본 도메인 URL (이미지 링크)</label>
+                <label>기본 도메인 URL (풀링크 사용 시 비워둬도 무방)</label>
                 <input type="text" id="domain" value="https://kimluna.uk/dorm/">
             </div>
 
             <div class="form-group">
-                <label>1단계 폴더 (한글 이름:코드)</label>
-                <textarea id="path1s" class="setting-textarea">윤재현:1yj</textarea>
+                <label>1단계 폴더 또는 전체 이미지 풀링크 입력</label>
+                <textarea id="path1s" class="setting-textarea" placeholder="여기에 전체 이미지 URL들을 그대로 붙여넣어보세요!"></textarea>
             </div>
 
             <div class="form-group">
@@ -441,7 +441,7 @@
                 <textarea id="path2s" class="setting-textarea"></textarea>
             </div>
 
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;" id="rangeInputsWrapper">
                 <div class="form-group">
                     <label>시작 번호</label>
                     <input type="number" id="startNum" value="0">
@@ -452,22 +452,7 @@
                 </div>
             </div>
 
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
-                <div class="form-group">
-                    <label>확장자</label>
-                    <input type="text" id="ext" value=".png">
-                </div>
-                <div class="form-group">
-                    <label>자릿수 패딩</label>
-                    <select id="padding">
-                        <option value="2" selected>2자리 (00, 01)</option>
-                        <option value="1">없음 (0, 1)</option>
-                        <option value="3">3자리 (000, 001)</option>
-                    </select>
-                </div>
-            </div>
-
-            <div class="form-group">
+            <div class="form-group" style="margin-top: 4px;">
                 <label>CORS 우회 프록시</label>
                 <select id="proxy">
                     <option value="wsrv" selected>wsrv.nl (추천)</option>
@@ -490,11 +475,11 @@
             const domainInput = document.getElementById('domain');
             const path1sInput = document.getElementById('path1s');
             const path2sInput = document.getElementById('path2s');
-            const extInput = document.getElementById('ext');
+            const extInput = document.getElementById('ext'); // 구버전 호환용 방어
             const proxySelect = document.getElementById('proxy');
             const startNumInput = document.getElementById('startNum');
             const endNumInput = document.getElementById('endNum');
-            const paddingSelect = document.getElementById('padding');
+            const rangeInputsWrapper = document.getElementById('rangeInputsWrapper');
 
             const settingsModal = document.getElementById('settingsModal');
             const openSettingsBtn = document.getElementById('openSettingsBtn');
@@ -516,8 +501,9 @@
             let folderDataMap = {};
             let activeFolderKey = '';
             let isTextView = false;
+            let currentPad = 1;
+            let renderSessionId = 0;
 
-            // 로컬 스토리지에서 설정 불러오기
             function loadSettings() {
                 try {
                     if (localStorage.getItem('viewer_domain') !== null) domainInput.value = localStorage.getItem('viewer_domain');
@@ -525,15 +511,12 @@
                     if (localStorage.getItem('viewer_path2s') !== null) path2sInput.value = localStorage.getItem('viewer_path2s');
                     if (localStorage.getItem('viewer_startNum') !== null) startNumInput.value = localStorage.getItem('viewer_startNum');
                     if (localStorage.getItem('viewer_endNum') !== null) endNumInput.value = localStorage.getItem('viewer_endNum');
-                    if (localStorage.getItem('viewer_ext') !== null) extInput.value = localStorage.getItem('viewer_ext');
-                    if (localStorage.getItem('viewer_padding') !== null) paddingSelect.value = localStorage.getItem('viewer_padding');
                     if (localStorage.getItem('viewer_proxy') !== null) proxySelect.value = localStorage.getItem('viewer_proxy');
                 } catch (e) {
                     console.error("Load settings error:", e);
                 }
             }
 
-            // 로컬 스토리지에 설정 저장하기
             function saveSettings() {
                 try {
                     localStorage.setItem('viewer_domain', domainInput.value);
@@ -541,8 +524,6 @@
                     localStorage.setItem('viewer_path2s', path2sInput.value);
                     localStorage.setItem('viewer_startNum', startNumInput.value);
                     localStorage.setItem('viewer_endNum', endNumInput.value);
-                    localStorage.setItem('viewer_ext', extInput.value);
-                    localStorage.setItem('viewer_padding', paddingSelect.value);
                     localStorage.setItem('viewer_proxy', proxySelect.value);
                 } catch (e) {
                     console.error("Save settings error:", e);
@@ -557,6 +538,50 @@
 
             function hasKorean(text) {
                 return /[ㄱ-ㅎㅏ-ㅣ가-힣]/.test(text);
+            }
+
+            // 입력된 텍스트가 전체 URL(풀링크) 목록인지 판단
+            function isFullUrlList(rawText) {
+                if (!rawText) return false;
+                const lines = rawText.split(/[\n,]+/).map(s => s.trim()).filter(Boolean);
+                if (lines.length === 0) return false;
+                // 첫 줄이나 대다수의 줄이 http:// 또는 https:// 로 시작하면 풀링크 모드로 인정
+                let httpCount = lines.filter(l => l.startsWith('http://') || l.startsWith('https://')).length;
+                return httpCount >= Math.min(lines.length, 1);
+            }
+
+            // 풀링크 목록을 분석하여 폴더별로 자동 그룹화
+            function parseFullUrls(rawText) {
+                const lines = rawText.split(/[\n,]+/).map(s => s.trim()).filter(Boolean);
+                let groups = {};
+
+                lines.forEach((url, idx) => {
+                    try {
+                        const parsedUrl = new URL(url);
+                        const pathSegments = parsedUrl.pathname.split('/').filter(Boolean);
+                        
+                        if (pathSegments.length >= 2) {
+                            // 마지막 세그먼트(파일명)를 제외한 나머지 경로를 폴더 이름으로 지정
+                            let fileName = pathSegments.pop();
+                            let folderName = pathSegments.join('/');
+                            
+                            if (!groups[folderName]) {
+                                groups[folderName] = [];
+                            }
+                            groups[folderName].push({
+                                num: idx,
+                                url: url
+                            });
+                        } else {
+                            if (!groups['Root']) groups['Root'] = [];
+                            groups['Root'].push({ num: idx, url: url });
+                        }
+                    } catch (e) {
+                        // URL 형식이 아닐 경우 무시
+                    }
+                });
+
+                return groups;
             }
 
             function parseListWithSmartAlias(rawText) {
@@ -593,19 +618,37 @@
                 });
             }
 
-            function buildData() {
+            function buildData(pad = 1) {
                 try {
+                    currentPad = pad;
+                    const rawText = path1sInput ? path1sInput.value.trim() : '';
+                    folderDataMap = {};
+                    let allItems = [];
+
+                    // 1. 만약 사용자가 전체 URL(풀링크) 리스트를 통째로 넣었다면 자동 폴더 분리 실행
+                    if (isFullUrlList(rawText)) {
+                        if (rangeInputsWrapper) rangeInputsWrapper.style.display = 'none'; // 번호 지정 숨김
+                        folderDataMap = parseFullUrls(rawText);
+                        
+                        Object.keys(folderDataMap).forEach(fName => {
+                            allItems = allItems.concat(folderDataMap[fName]);
+                        });
+
+                        if (Object.keys(folderDataMap).length > 1) {
+                            folderDataMap['[전체 통합]'] = allItems;
+                        }
+                        return;
+                    }
+
+                    // 2. 기존 방식 (도메인 + 폴더 코드 + 번호 조합)
+                    if (rangeInputsWrapper) rangeInputsWrapper.style.display = 'grid'; // 번호 지정 표시
                     const domain = domainInput ? domainInput.value.trim().replace(/\/+$/, '') : '';
-                    const p1s = parseListWithSmartAlias(path1sInput ? path1sInput.value : '');
+                    const p1s = parseListWithSmartAlias(rawText);
                     const p2s = parseListWithSmartAlias(path2sInput ? path2sInput.value : '');
-                    const ext = extInput ? extInput.value.trim() : '.png';
-                    const pad = paddingSelect ? parseInt(paddingSelect.value, 10) || 2 : 2;
+                    const ext = '.png'; // 기본 확장자 고정
                     
                     const start = startNumInput && startNumInput.value !== '' ? parseInt(startNumInput.value, 10) : 0;
                     const end = endNumInput && endNumInput.value !== '' ? parseInt(endNumInput.value, 10) : 30;
-
-                    folderDataMap = {};
-                    let allUrls = [];
 
                     if (!domain || p1s.length === 0) return;
 
@@ -621,19 +664,22 @@
 
                             let folderLabel = [p1.name, p2.name].filter(Boolean).join(' / ') || 'Root';
 
-                            let urls = [];
+                            let items = [];
                             for (let i = start; i <= end; i++) {
                                 let formattedNum = formatNumber(i, pad);
-                                urls.push(`${folderPathStr}/${formattedNum}${ext}`);
+                                items.push({
+                                    num: i,
+                                    url: `${folderPathStr}/${formattedNum}${ext}`
+                                });
                             }
 
-                            folderDataMap[folderLabel] = urls;
-                            allUrls = allUrls.concat(urls);
+                            folderDataMap[folderLabel] = items;
+                            allItems = allItems.concat(items);
                         });
                     });
 
                     if (Object.keys(folderDataMap).length > 1) {
-                        folderDataMap['[전체 통합]'] = allUrls;
+                        folderDataMap['[전체 통합]'] = allItems;
                     }
                 } catch (err) {
                     console.error("buildData error:", err);
@@ -656,6 +702,7 @@
                     chip.textContent = `${folderName === '[전체 통합]' ? '📂 ' : '📁 '}${folderName} (${folderDataMap[folderName].length})`;
                     chip.onclick = () => {
                         activeFolderKey = folderName;
+                        buildData(1);
                         renderChips();
                         renderContent();
                     };
@@ -679,50 +726,116 @@
                 
                 if (keys.length === 0) {
                     if (headerTitle) headerTitle.textContent = "🖼️ 한 장씩 스크롤 뷰어";
-                    feedContainer.innerHTML = '<div style="color:var(--text-secondary); text-align:center; padding:60px 20px; line-height: 1.6;">우측 상단 ⚙️ 버튼을 눌러 정보를 입력해주세요!</div>';
+                    feedContainer.innerHTML = '<div style="color:var(--text-secondary); text-align:center; padding:60px 20px; line-height: 1.6;">우측 상단 ⚙️ 버튼을 눌러 풀링크 또는 폴더 정보를 입력해주세요!</div>';
                     if (urlTextArea) urlTextArea.value = '';
                     return;
                 }
 
-                const urls = folderDataMap[activeFolderKey] || [];
+                renderSessionId++;
+                const sessionId = renderSessionId;
+
+                const items = folderDataMap[activeFolderKey] || [];
                 if (headerTitle) {
                     headerTitle.textContent = `🖼️ ${activeFolderKey}`;
                 }
 
                 feedContainer.innerHTML = '';
 
-                urls.forEach((originalUrl, index) => {
+                let singleDigitTotal = items.filter(it => it.num >= 0 && it.num <= 9).length;
+                let singleDigitFailed = 0;
+                let singleDigitLoaded = 0;
+                let totalCompleted = 0;
+                let totalLoaded = 0;
+                let fallbackTriggered = false;
+
+                function triggerTwoDigitFallback() {
+                    if (fallbackTriggered || sessionId !== renderSessionId || currentPad !== 1) return;
+                    fallbackTriggered = true;
+                    buildData(2);
+                    renderChips();
+                    renderContent();
+                }
+
+                items.forEach((itemObj, index) => {
+                    const originalUrl = itemObj.url;
                     const displayUrl = getProcessedImageUrl(originalUrl);
                     const item = document.createElement('div');
                     item.className = 'feed-item';
-                    item.innerHTML = `
-                        <div class="feed-image-box">
-                            <div class="spinner"></div>
-                            <img src="${displayUrl}" alt="img ${index+1}" loading="lazy" 
-                                 onload="this.previousElementSibling.style.display='none';" 
-                                 onerror="this.closest('.feed-item').remove();">
-                        </div>
-                        <div class="feed-footer">
-                            <span>#${index+1} / ${urls.length} (${originalUrl.split('/').pop()})</span>
-                            <a href="${originalUrl}" target="_blank">원본</a>
-                        </div>
-                    `;
-                    
-                    const imgBox = item.querySelector('.feed-image-box');
-                    if (imgBox) {
-                        imgBox.onclick = () => {
-                            if (lightbox && lightboxImg) {
-                                lightboxImg.src = displayUrl;
-                                lightbox.classList.add('active');
-                            }
-                        };
+
+                    const box = document.createElement('div');
+                    box.className = 'feed-image-box';
+
+                    const spinner = document.createElement('div');
+                    spinner.className = 'spinner';
+
+                    const img = document.createElement('img');
+                    img.alt = `img ${index + 1}`;
+                    if (itemObj.num >= 0 && itemObj.num <= 9) {
+                        img.loading = 'eager';
+                    } else {
+                        img.loading = 'lazy';
                     }
-                    
+
+                    img.onload = () => {
+                        if (sessionId !== renderSessionId) return;
+                        spinner.style.display = 'none';
+                        totalCompleted++;
+                        totalLoaded++;
+                        if (itemObj.num >= 0 && itemObj.num <= 9) {
+                            singleDigitLoaded++;
+                        }
+                    };
+
+                    img.onerror = () => {
+                        if (sessionId !== renderSessionId) return;
+                        item.remove();
+                        totalCompleted++;
+
+                        // 풀링크 모드가 아닐 때만 패딩 자동 전환 감지 작동
+                        if (!isFullUrlList(path1sInput.value) && currentPad === 1) {
+                            if (itemObj.num >= 0 && itemObj.num <= 9) {
+                                singleDigitFailed++;
+                                if (singleDigitFailed === singleDigitTotal && singleDigitLoaded === 0) {
+                                    triggerTwoDigitFallback();
+                                    return;
+                                }
+                            }
+                            if (totalCompleted === items.length && totalLoaded === 0) {
+                                triggerTwoDigitFallback();
+                                return;
+                            }
+                        }
+
+                        if (feedContainer.children.length === 0 && !fallbackTriggered) {
+                            feedContainer.innerHTML = '<div style="color:var(--text-secondary); text-align:center; padding:60px 20px; line-height: 1.6;">불러올 수 있는 이미지가 없습니다.</div>';
+                        }
+                    };
+
+                    img.src = displayUrl;
+
+                    box.appendChild(spinner);
+                    box.appendChild(img);
+                    box.onclick = () => {
+                        if (lightbox && lightboxImg) {
+                            lightboxImg.src = displayUrl;
+                            lightbox.classList.add('active');
+                        }
+                    };
+
+                    const footer = document.createElement('div');
+                    footer.className = 'feed-footer';
+                    footer.innerHTML = `
+                        <span>#${index + 1} / ${items.length} (${originalUrl.split('/').pop()})</span>
+                        <a href="${originalUrl}" target="_blank">원본</a>
+                    `;
+
+                    item.appendChild(box);
+                    item.appendChild(footer);
                     feedContainer.appendChild(item);
                 });
 
                 if (urlTextArea) {
-                    urlTextArea.value = urls.join('\n');
+                    urlTextArea.value = items.map(it => it.url).join('\n');
                 }
                 feedContainer.scrollTop = 0;
             }
@@ -739,9 +852,9 @@
 
             if (applySettingsBtn && settingsModal) {
                 applySettingsBtn.onclick = () => {
-                    saveSettings(); // 설정 저장 기능 추가
+                    saveSettings();
                     settingsModal.classList.remove('active');
-                    buildData();
+                    buildData(1);
                     renderChips();
                     renderContent();
                 };
@@ -775,11 +888,8 @@
                 lightbox.onclick = (e) => { if (e.target === lightbox) lightbox.classList.remove('active'); };
             }
 
-            // 1. 저장된 설정 불러오기
             loadSettings();
-
-            // 2. 초기 실행
-            buildData();
+            buildData(1);
             renderChips();
             renderContent();
 
