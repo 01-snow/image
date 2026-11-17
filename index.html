@@ -318,7 +318,7 @@
         }
 
         textarea.setting-textarea {
-            height: 70px;
+            height: 80px;
             font-family: monospace;
             resize: none;
         }
@@ -427,27 +427,27 @@
             </div>
 
             <div class="form-group">
-                <label>기본 도메인 URL</label>
-                <input type="text" id="domain" value="https://kimluna.uk/dorm/">
+                <label>기본 도메인 URL (선택)</label>
+                <input type="text" id="domain" value="">
             </div>
 
             <div class="form-group">
-                <label>1단계 폴더 (또는 풀링크 목록 붙여넣기)</label>
-                <textarea id="path1s" class="setting-textarea" placeholder="폴더명이나 풀링크를 입력하세요"></textarea>
+                <label>전체 이미지 풀링크 붙여넣기 (여러 개 가능)</label>
+                <textarea id="path1s" class="setting-textarea" placeholder="https://d.aang12.org/touya/B/29.png"></textarea>
             </div>
 
             <div class="form-group">
-                <label>2단계 폴더 (하위폴더, 선택사항)</label>
-                <textarea id="path2s" class="setting-textarea"></textarea>
+                <label>2단계 폴더 / 기타 설정</label>
+                <textarea id="path2s" class="setting-textarea" style="display:none;"></textarea>
             </div>
 
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;" id="rangeInputsWrapper">
                 <div class="form-group">
-                    <label>시작 번호</label>
+                    <label>탐색 시작 번호</label>
                     <input type="number" id="startNum" value="0">
                 </div>
                 <div class="form-group">
-                    <label>최대 탐색 번호 (부족하면 자동 확장)</label>
+                    <label>최대 탐색 범위 (부족하면 자동 확장)</label>
                     <input type="number" id="endNum" value="50">
                 </div>
             </div>
@@ -507,9 +507,6 @@
                 try {
                     if (localStorage.getItem('viewer_domain') !== null) domainInput.value = localStorage.getItem('viewer_domain');
                     if (localStorage.getItem('viewer_path1s') !== null) path1sInput.value = localStorage.getItem('viewer_path1s');
-                    if (localStorage.getItem('viewer_path2s') !== null) path2sInput.value = localStorage.getItem('viewer_path2s');
-                    if (localStorage.getItem('viewer_startNum') !== null) startNumInput.value = localStorage.getItem('viewer_startNum');
-                    if (localStorage.getItem('viewer_endNum') !== null) endNumInput.value = localStorage.getItem('viewer_endNum');
                     if (localStorage.getItem('viewer_proxy') !== null) proxySelect.value = localStorage.getItem('viewer_proxy');
                 } catch (e) {
                     console.error("Load settings error:", e);
@@ -520,9 +517,6 @@
                 try {
                     localStorage.setItem('viewer_domain', domainInput.value);
                     localStorage.setItem('viewer_path1s', path1sInput.value);
-                    localStorage.setItem('viewer_path2s', path2sInput.value);
-                    localStorage.setItem('viewer_startNum', startNumInput.value);
-                    localStorage.setItem('viewer_endNum', endNumInput.value);
                     localStorage.setItem('viewer_proxy', proxySelect.value);
                 } catch (e) {
                     console.error("Save settings error:", e);
@@ -535,10 +529,6 @@
                 return s;
             }
 
-            function hasKorean(text) {
-                return /[ㄱ-ㅎㅏ-ㅣ가-힣]/.test(text);
-            }
-
             function isFullUrlList(rawText) {
                 if (!rawText) return false;
                 const lines = rawText.split(/[\n,]+/).map(s => s.trim()).filter(Boolean);
@@ -547,7 +537,7 @@
                 return httpCount >= Math.min(lines.length, 1);
             }
 
-            // 풀링크 또는 특정 경로 목록에서 폴더 추출 및 번호 유추
+            // 풀링크에서 폴더 경로와 파일 정보 추출
             function parseFullUrls(rawText, baseDomain) {
                 const lines = rawText.split(/[\n,]+/).map(s => s.trim()).filter(Boolean);
                 let groups = {};
@@ -555,80 +545,34 @@
 
                 lines.forEach((url, idx) => {
                     let fullUrl = url;
-                    if (!url.startsWith('http://') && !url.startsWith('https://')) {
-                        if (cleanDomain) {
-                            fullUrl = `${cleanDomain}/${url.replace(/^\/+/, '')}`;
-                        }
+                    if (!url.startsWith('http://') && !url.startsWith('https://') && cleanDomain) {
+                        fullUrl = `${cleanDomain}/${url.replace(/^\/+/, '')}`;
                     }
 
                     try {
                         const parsedUrl = new URL(fullUrl);
-                        let pathname = parsedUrl.pathname;
+                        let pathname = parsedUrl.pathname; // 예: /touya/B/29.png
                         
-                        if (cleanDomain) {
-                            try {
-                                const domainObj = new URL(cleanDomain);
-                                if (pathname.startsWith(domainObj.pathname)) {
-                                    pathname = pathname.substring(domainObj.pathname.length);
-                                }
-                            } catch(e) {}
-                        }
-
-                        const pathSegments = pathname.split('/').filter(Boolean);
-                        
-                        if (pathSegments.length >= 2) {
-                            let fileName = pathSegments.pop();
-                            let folderName = pathSegments.join('/');
-                            if (!folderName) folderName = 'Root';
+                        let lastSlashIdx = pathname.lastIndexOf('/');
+                        if (lastSlashIdx !== -1) {
+                            let folderPath = pathname.substring(0, lastSlashIdx); // 예: /touya/B 또는 /touya
+                            let fileName = pathname.substring(lastSlashIdx + 1); // 예: 29.png
                             
+                            let baseFolderUrl = `${parsedUrl.origin}${folderPath}`;
+                            // 보기 좋은 폴더 이름 생성 (마지막 두 단계 경로 추출)
+                            let segments = folderPath.split('/').filter(Boolean);
+                            let folderName = segments.length >= 2 ? `${segments[segments.length-2]} / ${segments[segments.length-1]}` : (segments[0] || 'Root');
+
                             if (!groups[folderName]) {
-                                groups[folderName] = { baseFolderUrl: `${parsedUrl.origin}/${pathSegments.join('/')}`, sampleFiles: [] };
+                                groups[folderName] = { baseFolderUrl: baseFolderUrl, sampleFile: fileName };
                             }
-                            groups[folderName].sampleFiles.push(fileName);
-                        } else {
-                            if (!groups['Root']) groups['Root'] = { baseFolderUrl: parsedUrl.origin, sampleFiles: [] };
-                            groups['Root'].sampleFiles.push(pathSegments[0] || '');
                         }
                     } catch (e) {
-                        if (!groups['Root']) groups['Root'] = { baseFolderUrl: '', sampleFiles: [url] };
+                        console.error("URL parse error:", e);
                     }
                 });
 
                 return groups;
-            }
-
-            function parseListWithSmartAlias(rawText) {
-                if (!rawText || rawText.trim() === '') return [{ name: '', code: '' }];
-                const rawItems = rawText.split(/[\n,]+/)
-                                       .map(p => p.trim())
-                                       .filter(p => p.length > 0);
-                
-                if (rawItems.length === 0) return [{ name: '', code: '' }];
-
-                return rawItems.map(item => {
-                    let namePart = '';
-                    let codePart = '';
-
-                    if (item.includes(':')) {
-                        const parts = item.split(':');
-                        namePart = parts[0].trim();
-                        codePart = parts.slice(1).join(':').trim();
-                    } else if (item.includes('-')) {
-                        const firstDashIdx = item.indexOf('-');
-                        namePart = item.substring(0, firstDashIdx).trim();
-                        codePart = item.substring(firstDashIdx + 1).trim();
-                    }
-
-                    if (namePart && codePart && hasKorean(namePart)) {
-                        return {
-                            name: namePart,
-                            code: codePart.replace(/^\/+/, '').replace(/\/+$/, '')
-                        };
-                    }
-
-                    const clean = item.replace(/^\/+/, '').replace(/\/+$/, '');
-                    return { name: clean, code: clean };
-                });
             }
 
             function buildData(pad = 1) {
@@ -639,24 +583,19 @@
                     folderDataMap = {};
                     let allItems = [];
 
-                    // 1. 풀링크가 입력된 경우 폴더 그룹별로 정리 후 0번부터 탐색 범위 생성
                     if (isFullUrlList(rawText)) {
-                        if (rangeInputsWrapper) rangeInputsWrapper.style.display = 'none';
                         const parsedGroups = parseFullUrls(rawText, domain);
-                        
+                        const start = startNumInput && startNumInput.value !== '' ? parseInt(startNumInput.value, 10) : 0;
+                        const end = endNumInput && endNumInput.value !== '' ? parseInt(endNumInput.value, 10) : 50;
+
                         Object.keys(parsedGroups).forEach(folderName => {
                             let gInfo = parsedGroups[folderName];
-                            // 확장자 추출 (기본 .png 또는 샘플 파일에서 추출)
                             let ext = '.png';
-                            if (gInfo.sampleFiles.length > 0) {
-                                let lastSample = gInfo.sampleFiles[0];
-                                let dotIdx = lastSample.lastIndexOf('.');
-                                if (dotIdx !== -1) ext = lastSample.substring(dotIdx);
-                            }
+                            let dotIdx = gInfo.sampleFile.lastIndexOf('.');
+                            if (dotIdx !== -1) ext = gInfo.sampleFile.substring(dotIdx);
 
                             let items = [];
-                            // 0번부터 넉넉하게 50번까지 생성하여 로드 실패 시 자동 필터링
-                            for (let i = 0; i <= 50; i++) {
+                            for (let i = start; i <= end; i++) {
                                 let formattedNum = formatNumber(i, pad);
                                 items.push({
                                     num: i,
@@ -670,48 +609,6 @@
                         if (Object.keys(folderDataMap).length > 1) {
                             folderDataMap['[전체 통합]'] = allItems;
                         }
-                        return;
-                    }
-
-                    // 2. 일반 폴더 코드 조합 방식
-                    if (rangeInputsWrapper) rangeInputsWrapper.style.display = 'grid';
-                    const p1s = parseListWithSmartAlias(rawText);
-                    const p2s = parseListWithSmartAlias(path2sInput ? path2sInput.value : '');
-                    const ext = '.png';
-                    
-                    const start = startNumInput && startNumInput.value !== '' ? parseInt(startNumInput.value, 10) : 0;
-                    const end = endNumInput && endNumInput.value !== '' ? parseInt(endNumInput.value, 10) : 50;
-
-                    if (!domain || p1s.length === 0) return;
-
-                    let list1 = p1s;
-                    let list2 = p2s.length > 0 && p2s[0].code !== '' ? p2s : [{ name: '', code: '' }];
-
-                    list1.forEach(p1 => {
-                        list2.forEach(p2 => {
-                            let urlParts = [domain];
-                            if (p1.code) urlParts.push(p1.code);
-                            if (p2.code) urlParts.push(p2.code);
-                            let folderPathStr = urlParts.join('/');
-
-                            let folderLabel = [p1.name, p2.name].filter(Boolean).join(' / ') || 'Root';
-
-                            let items = [];
-                            for (let i = start; i <= end; i++) {
-                                let formattedNum = formatNumber(i, pad);
-                                items.push({
-                                    num: i,
-                                    url: `${folderPathStr}/${formattedNum}${ext}`
-                                });
-                            }
-
-                            folderDataMap[folderLabel] = items;
-                            allItems = allItems.concat(items);
-                        });
-                    });
-
-                    if (Object.keys(folderDataMap).length > 1) {
-                        folderDataMap['[전체 통합]'] = allItems;
                     }
                 } catch (err) {
                     console.error("buildData error:", err);
@@ -758,7 +655,7 @@
                 
                 if (keys.length === 0) {
                     if (headerTitle) headerTitle.textContent = "🖼️ 한 장씩 스크롤 뷰어";
-                    feedContainer.innerHTML = '<div style="color:var(--text-secondary); text-align:center; padding:60px 20px; line-height: 1.6;">우측 상단 ⚙️ 버튼을 눌러 정보를 입력해주세요!</div>';
+                    feedContainer.innerHTML = '<div style="color:var(--text-secondary); text-align:center; padding:60px 20px; line-height: 1.6;">우측 상단 ⚙️ 버튼을 눌러 풀링크를 붙여넣어주세요!</div>';
                     if (urlTextArea) urlTextArea.value = '';
                     return;
                 }
@@ -827,7 +724,7 @@
                         item.remove();
                         totalCompleted++;
 
-                        if (!isFullUrlList(path1sInput.value) && currentPad === 1) {
+                        if (currentPad === 1) {
                             if (itemObj.num >= 0 && itemObj.num <= 9) {
                                 singleDigitFailed++;
                                 if (singleDigitFailed === singleDigitTotal && singleDigitLoaded === 0) {
