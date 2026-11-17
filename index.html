@@ -432,13 +432,13 @@
             </div>
 
             <div class="form-group">
-                <label>1단계 폴더 (상위폴더, 여러 개 입력 가능)</label>
-                <textarea id="path1s" class="setting-textarea" placeholder="예: ak, touya"></textarea>
+                <label>1단계 폴더 / 접두사 (여러 개 입력 가능)</label>
+                <textarea id="path1s" class="setting-textarea" placeholder="예: ak, touya 또는 A, B"></textarea>
             </div>
 
             <div class="form-group">
-                <label>2단계 폴더 (하위폴더, 비워두면 하위폴더 생략)</label>
-                <textarea id="path2s" class="setting-textarea" placeholder="예: A, B, C (안 쓰려면 비워두세요)"></textarea>
+                <label>2단계 폴더 (하위폴더, 선택사항)</label>
+                <textarea id="path2s" class="setting-textarea" placeholder="안 쓰려면 비워두세요"></textarea>
             </div>
 
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
@@ -499,7 +499,7 @@
             let folderDataMap = {};
             let activeFolderKey = '';
             let isTextView = false;
-            let currentPad = 1;
+            let currentPad = 1; // 기본 1자리부터 탐색 시작
             let renderSessionId = 0;
 
             function loadSettings() {
@@ -558,23 +558,22 @@
                             targetUrl = 'https://' + targetUrl;
                         }
                         const parsed = new URL(targetUrl);
-                        let pathname = parsed.pathname; // 예: /touya/B/29.png 또는 /A_2.webp
+                        let pathname = parsed.pathname; 
                         let lastSlash = pathname.lastIndexOf('/');
                         
                         if (lastSlash !== -1) {
-                            let fileName = pathname.substring(lastSlash + 1); // 29.png 또는 A_2.webp
+                            let fileName = pathname.substring(lastSlash + 1); 
                             let dot = fileName.lastIndexOf('.');
                             if (dot !== -1) ext = fileName.substring(dot);
                             
                             let namePart = dot !== -1 ? fileName.substring(0, dot) : fileName;
                             
-                            // 언더바 패턴(예: A_2)인지 슬래시 폴더 패턴인지 확인
                             if (namePart.includes('_') && !pathname.substring(0, lastSlash).includes('/')) {
                                 isUnderscorePattern = true;
                                 defaultP1 = namePart.substring(0, namePart.lastIndexOf('_'));
                                 baseUrl = parsed.origin + (lastSlash > 0 ? pathname.substring(0, lastSlash) : '');
                             } else {
-                                let dirPath = pathname.substring(0, lastSlash); // /touya/B 또는 /A
+                                let dirPath = pathname.substring(0, lastSlash); 
                                 let segments = dirPath.split('/').filter(Boolean);
                                 if (segments.length >= 2) {
                                     defaultP2 = segments.pop();
@@ -604,7 +603,6 @@
 
                     p1List.forEach(p1 => {
                         if (isUnderscorePattern) {
-                            // 언더바 패턴 (예: A_1.webp)
                             let folderLabel = p1;
                             let items = [];
                             for (let i = start; i <= end; i++) {
@@ -617,7 +615,6 @@
                             folderDataMap[folderLabel] = items;
                             allItems = allItems.concat(items);
                         } else if (p2List.length > 0) {
-                            // 상위 + 하위 폴더 모두 사용하는 경우
                             p2List.forEach(p2 => {
                                 let folderLabel = `${p1} / ${p2}`;
                                 let folderPath = `${baseUrl}/${p1}/${p2}`;
@@ -633,7 +630,6 @@
                                 allItems = allItems.concat(items);
                             });
                         } else {
-                            // 하위 폴더를 쓰지 않고 상위 폴더만 사용하는 경우
                             let folderLabel = p1;
                             let folderPath = `${baseUrl}/${p1}`;
                             let items = [];
@@ -712,6 +708,22 @@
 
                 feedContainer.innerHTML = '';
 
+                let singleDigitTotal = items.filter(it => it.num >= 0 && it.num <= 9).length;
+                let singleDigitFailed = 0;
+                let singleDigitLoaded = 0;
+                let totalCompleted = 0;
+                let totalLoaded = 0;
+                let fallbackTriggered = false;
+
+                // 1번(0~9) 이미지가 모두 실패하면 자동으로 2자리(01, 02...) 패딩으로 전환하는 함수
+                function triggerTwoDigitFallback() {
+                    if (fallbackTriggered || sessionId !== renderSessionId || currentPad !== 1) return;
+                    fallbackTriggered = true;
+                    buildData(2);
+                    renderChips();
+                    renderContent();
+                }
+
                 let validUrlsForText = [];
 
                 items.forEach((itemObj, index) => {
@@ -728,19 +740,45 @@
 
                     const img = document.createElement('img');
                     img.alt = `img ${index + 1}`;
-                    img.loading = 'lazy';
+                    if (itemObj.num >= 0 && itemObj.num <= 9) {
+                        img.loading = 'eager'; // 한 자릿수 번호는 빠르게 판별하기 위해 우선 로드
+                    } else {
+                        img.loading = 'lazy';
+                    }
 
                     img.onload = () => {
                         if (sessionId !== renderSessionId) return;
                         spinner.style.display = 'none';
+                        totalCompleted++;
+                        totalLoaded++;
                         validUrlsForText.push(originalUrl);
+                        if (itemObj.num >= 0 && itemObj.num <= 9) {
+                            singleDigitLoaded++;
+                        }
                         updateTextarea(validUrlsForText);
                     };
 
                     img.onerror = () => {
                         if (sessionId !== renderSessionId) return;
                         item.remove();
-                        if (feedContainer.children.length === 0 && index === items.length - 1) {
+                        totalCompleted++;
+
+                        if (currentPad === 1) {
+                            if (itemObj.num >= 0 && itemObj.num <= 9) {
+                                singleDigitFailed++;
+                                // 한 자릿수(0~9)가 전부 실패하고 로드된 게 없으면 즉시 두 자리(01~)로 자동 전환!
+                                if (singleDigitFailed === singleDigitTotal && singleDigitLoaded === 0) {
+                                    triggerTwoDigitFallback();
+                                    return;
+                                }
+                            }
+                            if (totalCompleted === items.length && totalLoaded === 0) {
+                                triggerTwoDigitFallback();
+                                return;
+                            }
+                        }
+
+                        if (feedContainer.children.length === 0 && totalCompleted === items.length && !fallbackTriggered) {
                             feedContainer.innerHTML = '<div style="color:var(--text-secondary); text-align:center; padding:60px 20px; line-height: 1.6;">불러올 수 있는 이미지가 없습니다.</div>';
                         }
                     };
@@ -791,7 +829,7 @@
                 applySettingsBtn.onclick = () => {
                     saveSettings();
                     settingsModal.classList.remove('active');
-                    buildData(1);
+                    buildData(1); // 적용 시 항상 1자리(기본)부터 탐색 시작
                     renderChips();
                     renderContent();
                 };
